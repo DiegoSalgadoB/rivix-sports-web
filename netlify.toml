@@ -1,0 +1,25 @@
+## Configuración de despliegue para Netlify
+## Docs: https://docs.netlify.com/configure-builds/file-based-configuration/
+
+[build]
+  # Carpeta que se publica tal cual (el sitio es estático, no requiere build)
+  publish = "."
+  # Carpeta donde vivirán las funciones serverless (Webpay, contacto, etc.)
+  functions = "netlify/functions"
+  command = ""
+
+[dev]
+  publish = "."
+  functions = "netlify/functions"
+  port = 8888
+
+## Cuando agregues funciones en netlify/functions/, Netlify las expone
+## automáticamente en /.netlify/functions/nombre-de-la-funcion
+##
+## Si más adelante quieres URLs más limpias (ej. /api/webpay/create en vez de
+## /.netlify/functions/webpay-create), descomenta y ajusta este bloque:
+#
+# [[redirects]]
+#   from = "/api/*"
+#   to = "/.netlify/functions/:splat"
+#   status = 200

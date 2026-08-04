@@ -1,0 +1,12 @@
+{
+  "name": "rivix-sports-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sitio web de Rivix Sports Chile — mangas de compresión deportiva",
+  "scripts": {
+    "dev": "netlify dev"
+  },
+  "devDependencies": {
+    "netlify-cli": "^17.0.0"
+  }
+}

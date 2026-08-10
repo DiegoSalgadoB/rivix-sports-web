@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>¡Compra exitosa! — RIVIX</title>
+<style>
+  body{
+    background:#0a0a0a; color:#f4f4ef; font-family:'Work Sans', sans-serif;
+    min-height:100vh; display:flex; align-items:center; justify-content:center;
+    text-align:center; padding:24px;
+  }
+  .box{max-width:480px;}
+  h1{color:#ccfd3f; font-size:1.8rem; margin-bottom:16px;}
+  p{color:#8c8c86; line-height:1.6; margin-bottom:8px;}
+  .orden{color:#f4f4ef; font-weight:600;}
+  a{
+    display:inline-block; margin-top:28px; color:#0a0a0a; background:#ccfd3f;
+    padding:14px 28px; text-decoration:none; font-weight:700; letter-spacing:0.04em;
+    text-transform:uppercase; font-size:0.85rem;
+  }
+</style>
+</head>
+<body>
+  <div class="box">
+    <h1>¡Pago aprobado! 🎉</h1>
+    <p>Gracias por tu compra en RIVIX.</p>
+    <p>N° de orden: <span class="orden" id="orden">—</span></p>
+    <p>Te contactaremos a la brevedad para coordinar el despacho.</p>
+    <a href="/">Volver a la tienda</a>
+  </div>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const orden = params.get('orden');
+    if (orden) document.getElementById('orden').textContent = orden;
+  </script>
+</body>
+</html>

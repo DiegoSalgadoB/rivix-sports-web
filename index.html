@@ -615,7 +615,8 @@
   <div class="cart-items" id="cartItems"><div class="cart-empty">Tu carrito está vacío.</div></div>
   <div class="cart-foot">
     <div class="cart-total"><span>Total</span><span id="cartTotal">$0</span></div>
-    <button class="btn btn-primary" id="checkoutBtn" style="width:100%; justify-content:center;">Pedir por WhatsApp</button>
+    <button class="btn btn-primary" id="webpayBtn" style="width:100%; justify-content:center; margin-bottom:10px;">Pagar con Webpay</button>
+    <button class="btn btn-primary" id="checkoutBtn" style="width:100%; justify-content:center; background:transparent; border:1px solid var(--line); color:var(--white);">Pedir por WhatsApp</button>
     <div id="checkoutMsg" style="color:var(--gray); font-size:0.78rem; margin-top:10px; display:none;"></div>
   </div>
 </div>
@@ -779,6 +780,52 @@
       .catch(() => {
         alert('No se pudo enviar el mensaje. Intenta nuevamente o escríbenos por WhatsApp.');
       });
+  });
+
+  // ---- Checkout via Webpay ----
+  const webpayBtn = document.getElementById('webpayBtn');
+  webpayBtn.addEventListener('click', async () => {
+    if (cart.length === 0) {
+      checkoutMsg.style.display = 'block';
+      checkoutMsg.textContent = 'Tu carrito está vacío.';
+      return;
+    }
+    const total = cart.reduce((a, c) => a + c.price, 0);
+
+    webpayBtn.disabled = true;
+    webpayBtn.textContent = 'Redirigiendo a Webpay...';
+
+    try {
+      const res = await fetch('/.netlify/functions/webpay-create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: total }),
+      });
+
+      if (!res.ok) throw new Error('Respuesta no válida del servidor');
+      const data = await res.json();
+
+      if (!data.url || !data.token) throw new Error('Faltan datos de Webpay');
+
+      // Webpay Plus recibe al cliente vía un formulario enviado por POST,
+      // así que armamos ese formulario dinámicamente y lo enviamos.
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = data.url;
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'token_ws';
+      input.value = data.token;
+      form.appendChild(input);
+      document.body.appendChild(form);
+      form.submit();
+    } catch (err) {
+      console.error(err);
+      webpayBtn.disabled = false;
+      webpayBtn.textContent = 'Pagar con Webpay';
+      checkoutMsg.style.display = 'block';
+      checkoutMsg.textContent = 'No se pudo iniciar el pago. Intenta nuevamente o pide por WhatsApp.';
+    }
   });
 
   // ---- Checkout via WhatsApp ----

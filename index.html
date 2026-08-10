@@ -311,6 +311,38 @@
   .cart-total{display:flex; justify-content:space-between; font-size:1rem; font-weight:700; margin-bottom:18px;}
   .cart-total span:last-child{color:var(--lime); font-family:'Anton'; font-size:1.3rem;}
   .overlay{position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:150; opacity:0; pointer-events:none; transition:opacity .3s ease;}
+
+  /* ---- Formulario de datos de despacho ---- */
+  .checkout-overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:300;
+    display:none; align-items:center; justify-content:center; padding:20px;
+  }
+  .checkout-overlay.open{display:flex;}
+  .checkout-modal{
+    background:var(--black-soft); border:1px solid var(--line); max-width:460px;
+    width:100%; max-height:90vh; overflow-y:auto; padding:28px;
+  }
+  .checkout-modal h3{font-size:1.2rem; margin-bottom:6px;}
+  .checkout-modal .sub{color:var(--gray); font-size:0.82rem; margin-bottom:22px;}
+  .field{margin-bottom:16px;}
+  .field label{display:block; font-size:0.78rem; color:var(--gray); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.03em;}
+  .field input, .field select{
+    width:100%; background:transparent; border:1px solid var(--line); color:var(--white);
+    padding:12px 14px; font-family:inherit; font-size:0.9rem;
+  }
+  .field input:focus, .field select:focus{border-color:var(--lime); outline:none;}
+  .field select{appearance:auto;}
+  .field .error{color:#ff6b6b; font-size:0.75rem; margin-top:6px; display:none;}
+  .field.invalid input, .field.invalid select{border-color:#ff6b6b;}
+  .field.invalid .error{display:block;}
+  .field-row{display:flex; gap:12px;}
+  .field-row .field{flex:1;}
+  .checkout-actions{display:flex; gap:12px; margin-top:6px;}
+  .checkout-actions button{flex:1; justify-content:center;}
+  .checkout-cancel{
+    background:transparent; border:1px solid var(--line); color:var(--white);
+    padding:14px; text-transform:uppercase; font-size:0.8rem; font-weight:700; letter-spacing:0.04em;
+  }
   .overlay.show{opacity:1; pointer-events:auto;}
 
   /* Contacto */
@@ -620,6 +652,81 @@
   </div>
 </div>
 
+<div class="checkout-overlay" id="checkoutOverlay">
+  <div class="checkout-modal">
+    <h3>Datos de despacho</h3>
+    <p class="sub">Los necesitamos para coordinar la entrega de tu pedido.</p>
+
+    <form id="checkoutForm">
+      <div class="field" id="field-nombre">
+        <label for="cf-nombre">Nombre completo</label>
+        <input type="text" id="cf-nombre" autocomplete="name" required>
+        <div class="error">Ingresa tu nombre completo.</div>
+      </div>
+
+      <div class="field" id="field-rut">
+        <label for="cf-rut">RUT</label>
+        <input type="text" id="cf-rut" placeholder="12.345.678-9" required>
+        <div class="error">Ingresa un RUT válido (ej: 12.345.678-9).</div>
+      </div>
+
+      <div class="field" id="field-email">
+        <label for="cf-email">Email</label>
+        <input type="email" id="cf-email" autocomplete="email" required>
+        <div class="error">Ingresa un correo válido.</div>
+      </div>
+
+      <div class="field" id="field-telefono">
+        <label for="cf-telefono">Teléfono</label>
+        <input type="tel" id="cf-telefono" placeholder="+56 9 1234 5678" autocomplete="tel" required>
+        <div class="error">Ingresa un teléfono válido.</div>
+      </div>
+
+      <div class="field" id="field-direccion">
+        <label for="cf-direccion">Dirección</label>
+        <input type="text" id="cf-direccion" placeholder="Calle, número, depto/casa" autocomplete="street-address" required>
+        <div class="error">Ingresa tu dirección.</div>
+      </div>
+
+      <div class="field-row">
+        <div class="field" id="field-comuna">
+          <label for="cf-comuna">Comuna</label>
+          <input type="text" id="cf-comuna" required>
+          <div class="error">Ingresa tu comuna.</div>
+        </div>
+        <div class="field" id="field-region">
+          <label for="cf-region">Región</label>
+          <select id="cf-region" required>
+            <option value="">Selecciona...</option>
+            <option>Arica y Parinacota</option>
+            <option>Tarapacá</option>
+            <option>Antofagasta</option>
+            <option>Atacama</option>
+            <option>Coquimbo</option>
+            <option>Valparaíso</option>
+            <option>Metropolitana de Santiago</option>
+            <option>Libertador General Bernardo O'Higgins</option>
+            <option>Maule</option>
+            <option>Ñuble</option>
+            <option>Biobío</option>
+            <option>La Araucanía</option>
+            <option>Los Ríos</option>
+            <option>Los Lagos</option>
+            <option>Aysén</option>
+            <option>Magallanes y de la Antártica Chilena</option>
+          </select>
+          <div class="error">Selecciona tu región.</div>
+        </div>
+      </div>
+
+      <div class="checkout-actions">
+        <button type="button" class="checkout-cancel" id="checkoutCancelBtn">Cancelar</button>
+        <button type="submit" class="btn btn-primary" id="checkoutSubmitBtn">Ir a pagar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <script>
   // ---- Nav / tab logic ----
   const sections = document.querySelectorAll('main > section');
@@ -781,25 +888,88 @@
       });
   });
 
-  // ---- Checkout via Webpay ----
+  // ---- Checkout: primero pedimos los datos de despacho, luego Webpay ----
   const webpayBtn = document.getElementById('webpayBtn');
   const checkoutMsg = document.getElementById('checkoutMsg');
-  webpayBtn.addEventListener('click', async () => {
+  const checkoutOverlay = document.getElementById('checkoutOverlay');
+  const checkoutForm = document.getElementById('checkoutForm');
+  const checkoutCancelBtn = document.getElementById('checkoutCancelBtn');
+  const checkoutSubmitBtn = document.getElementById('checkoutSubmitBtn');
+
+  webpayBtn.addEventListener('click', () => {
     if (cart.length === 0) {
       checkoutMsg.style.display = 'block';
       checkoutMsg.textContent = 'Tu carrito está vacío.';
       return;
     }
+    checkoutOverlay.classList.add('open');
+  });
+
+  checkoutCancelBtn.addEventListener('click', () => {
+    checkoutOverlay.classList.remove('open');
+  });
+
+  // Valida un RUT chileno (formato + dígito verificador)
+  function validarRut(rutSucio) {
+    const rut = rutSucio.replace(/[.\s]/g, '').toUpperCase();
+    const match = rut.match(/^(\d{7,8})-?([\dK])$/);
+    if (!match) return false;
+    const cuerpo = match[1];
+    const dv = match[2];
+    let suma = 0, multiplo = 2;
+    for (let i = cuerpo.length - 1; i >= 0; i--) {
+      suma += parseInt(cuerpo[i], 10) * multiplo;
+      multiplo = multiplo === 7 ? 2 : multiplo + 1;
+    }
+    const resto = 11 - (suma % 11);
+    const dvEsperado = resto === 11 ? '0' : resto === 10 ? 'K' : String(resto);
+    return dv === dvEsperado;
+  }
+
+  function marcarError(fieldId, esInvalido) {
+    document.getElementById(fieldId).classList.toggle('invalid', esInvalido);
+  }
+
+  checkoutForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const nombre = document.getElementById('cf-nombre').value.trim();
+    const rut = document.getElementById('cf-rut').value.trim();
+    const email = document.getElementById('cf-email').value.trim();
+    const telefono = document.getElementById('cf-telefono').value.trim();
+    const direccion = document.getElementById('cf-direccion').value.trim();
+    const comuna = document.getElementById('cf-comuna').value.trim();
+    const region = document.getElementById('cf-region').value;
+
+    const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    const telefonoValido = telefono.replace(/[^\d]/g, '').length >= 9;
+
+    let valido = true;
+    marcarError('field-nombre', nombre.length < 3); if (nombre.length < 3) valido = false;
+    marcarError('field-rut', !validarRut(rut)); if (!validarRut(rut)) valido = false;
+    marcarError('field-email', !emailValido); if (!emailValido) valido = false;
+    marcarError('field-telefono', !telefonoValido); if (!telefonoValido) valido = false;
+    marcarError('field-direccion', direccion.length < 4); if (direccion.length < 4) valido = false;
+    marcarError('field-comuna', comuna.length < 2); if (comuna.length < 2) valido = false;
+    marcarError('field-region', region === ''); if (region === '') valido = false;
+
+    if (!valido) return;
+
+    const cliente = { nombre, rut, email, telefono, direccion, comuna, region };
     const total = cart.reduce((a, c) => a + c.price, 0);
 
-    webpayBtn.disabled = true;
-    webpayBtn.textContent = 'Redirigiendo a Webpay...';
+    checkoutSubmitBtn.disabled = true;
+    checkoutSubmitBtn.textContent = 'Redirigiendo a Webpay...';
 
     try {
       const res = await fetch('/.netlify/functions/webpay-create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: total }),
+        body: JSON.stringify({
+          amount: total,
+          cliente,
+          items: cart.map(c => ({ name: c.name, price: c.price })),
+        }),
       });
 
       if (!res.ok) throw new Error('Respuesta no válida del servidor');
@@ -821,8 +991,8 @@
       form.submit();
     } catch (err) {
       console.error(err);
-      webpayBtn.disabled = false;
-      webpayBtn.textContent = 'Pagar con Webpay';
+      checkoutSubmitBtn.disabled = false;
+      checkoutSubmitBtn.textContent = 'Ir a pagar';
       checkoutMsg.style.display = 'block';
       checkoutMsg.textContent = 'No se pudo iniciar el pago. Intenta nuevamente.';
     }

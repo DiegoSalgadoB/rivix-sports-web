@@ -615,8 +615,7 @@
   <div class="cart-items" id="cartItems"><div class="cart-empty">Tu carrito está vacío.</div></div>
   <div class="cart-foot">
     <div class="cart-total"><span>Total</span><span id="cartTotal">$0</span></div>
-    <button class="btn btn-primary" id="webpayBtn" style="width:100%; justify-content:center; margin-bottom:10px;">Pagar con Webpay</button>
-    <button class="btn btn-primary" id="checkoutBtn" style="width:100%; justify-content:center; background:transparent; border:1px solid var(--line); color:var(--white);">Pedir por WhatsApp</button>
+    <button class="btn btn-primary" id="webpayBtn" style="width:100%; justify-content:center;">Pagar con Webpay</button>
     <div id="checkoutMsg" style="color:var(--gray); font-size:0.78rem; margin-top:10px; display:none;"></div>
   </div>
 </div>
@@ -784,6 +783,7 @@
 
   // ---- Checkout via Webpay ----
   const webpayBtn = document.getElementById('webpayBtn');
+  const checkoutMsg = document.getElementById('checkoutMsg');
   webpayBtn.addEventListener('click', async () => {
     if (cart.length === 0) {
       checkoutMsg.style.display = 'block';
@@ -824,31 +824,8 @@
       webpayBtn.disabled = false;
       webpayBtn.textContent = 'Pagar con Webpay';
       checkoutMsg.style.display = 'block';
-      checkoutMsg.textContent = 'No se pudo iniciar el pago. Intenta nuevamente o pide por WhatsApp.';
+      checkoutMsg.textContent = 'No se pudo iniciar el pago. Intenta nuevamente.';
     }
-  });
-
-  // ---- Checkout via WhatsApp ----
-  const WHATSAPP_NUMBER = '56987764538'; // Rivix Sports Chile
-  const checkoutBtn = document.getElementById('checkoutBtn');
-  const checkoutMsg = document.getElementById('checkoutMsg');
-  checkoutBtn.addEventListener('click', () => {
-    if (cart.length === 0) {
-      checkoutMsg.style.display = 'block';
-      checkoutMsg.textContent = 'Tu carrito está vacío.';
-      return;
-    }
-    const lines = cart.map(c => `• ${c.name} — ${formatCLP(c.price)}`).join('\n');
-    const total = cart.reduce((a, c) => a + c.price, 0);
-    const message =
-      `¡Hola Rivix! 👋 Quiero hacer este pedido:\n\n` +
-      `${lines}\n\n` +
-      `Total: ${formatCLP(total)}\n\n` +
-      `Mi nombre:\n` +
-      `Mi dirección y comuna:\n` +
-      `Talla confirmada: sí`;
-    const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
-    window.open(url, '_blank');
   });
 </script>
 </body>

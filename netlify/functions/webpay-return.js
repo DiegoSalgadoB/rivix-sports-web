@@ -14,6 +14,7 @@ const {
   IntegrationCommerceCodes,
   Environment,
 } = require('transbank-sdk');
+const { getStore } = require('@netlify/blobs');
 
 exports.handler = async (event) => {
   const origin = event.headers.origin || `https://${event.headers.host}`;
@@ -62,11 +63,21 @@ exports.handler = async (event) => {
       const buyOrder = encodeURIComponent(result.buy_order);
       const monto = encodeURIComponent(result.amount);
 
+      // Recuperamos los datos de despacho que guardamos en webpay-create.js
+      // (nombre, RUT, dirección, etc.), usando el número de orden.
+      let pedido = null;
+      try {
+        const store = getStore('rivix-pedidos');
+        pedido = await store.get(result.buy_order, { type: 'json' });
+      } catch (blobError) {
+        console.error('No se pudo recuperar el pedido guardado:', blobError);
+      }
+
       // Avisar por correo que llegó una venta nueva. Si el correo falla por
       // cualquier motivo, NO queremos que eso rompa la compra del cliente
       // (por eso va en su propio try/catch, separado del pago).
       try {
-        await enviarAvisoDeVenta(result);
+        await enviarAvisoDeVenta(result, pedido);
       } catch (mailError) {
         console.error('No se pudo enviar el correo de aviso:', mailError);
       }
@@ -108,7 +119,11 @@ const CORREO_AVISO_VENTAS = 'padelaltamirachile@gmail.com';
 // Manda un correo simple avisando que se aprobó un pago, usando el servicio
 // Resend (resend.com). Necesita la variable de entorno RESEND_API_KEY
 // configurada en Netlify (Site settings → Environment variables).
-async function enviarAvisoDeVenta(result) {
+//
+// "pedido" son los datos que guardamos en webpay-create.js (cliente + items)
+// — puede venir null si por algún motivo no se pudo recuperar, y en ese caso
+// el correo se manda igual, solo que sin esos detalles extra.
+async function enviarAvisoDeVenta(result, pedido) {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
     console.warn('RESEND_API_KEY no está configurada — no se envía el aviso.');
@@ -120,12 +135,35 @@ async function enviarAvisoDeVenta(result) {
     currency: 'CLP',
   }).format(result.amount);
 
+  const cliente = pedido?.cliente;
+  const items = pedido?.items || [];
+
+  const filasProductos = items.length
+    ? items.map((it) => `<li>${it.name} — ${new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(it.price)}</li>`).join('')
+    : '<li>(no se pudo recuperar el detalle de productos)</li>';
+
+  const datosDespacho = cliente
+    ? `
+      <h3>Datos de despacho</h3>
+      <p><strong>Nombre:</strong> ${cliente.nombre}</p>
+      <p><strong>RUT:</strong> ${cliente.rut}</p>
+      <p><strong>Email:</strong> ${cliente.email}</p>
+      <p><strong>Teléfono:</strong> ${cliente.telefono}</p>
+      <p><strong>Dirección:</strong> ${cliente.direccion}, ${cliente.comuna}, ${cliente.region}</p>
+    `
+    : '<p><em>No se pudieron recuperar los datos de despacho.</em></p>';
+
   const html = `
     <h2>¡Nueva venta en RIVIX! 🎉</h2>
     <p><strong>N° de orden:</strong> ${result.buy_order}</p>
     <p><strong>Monto:</strong> ${monto}</p>
     <p><strong>Tarjeta terminada en:</strong> ${result.card_detail?.card_number || 'N/D'}</p>
     <p><strong>Fecha:</strong> ${result.transaction_date}</p>
+
+    <h3>Productos</h3>
+    <ul>${filasProductos}</ul>
+
+    ${datosDespacho}
   `;
 
   const res = await fetch('https://api.resend.com/emails', {

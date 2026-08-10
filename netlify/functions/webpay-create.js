@@ -19,6 +19,7 @@ const {
   IntegrationCommerceCodes,
   Environment,
 } = require('transbank-sdk');
+const { getStore } = require('@netlify/blobs');
 
 exports.handler = async (event) => {
   // Solo aceptamos pedidos enviados como POST (no se puede "visitar" esta
@@ -30,6 +31,8 @@ exports.handler = async (event) => {
   try {
     const data = JSON.parse(event.body);
     const amount = Math.round(Number(data.amount)); // monto total en pesos chilenos, sin decimales
+    const cliente = data.cliente || {};
+    const items = Array.isArray(data.items) ? data.items : [];
 
     if (!amount || amount <= 0) {
       return {
@@ -38,10 +41,36 @@ exports.handler = async (event) => {
       };
     }
 
+    // Validación mínima de los datos de despacho (además de la que ya hace
+    // el formulario en el navegador — nunca hay que confiar solo en lo que
+    // valida el navegador, por si alguien intenta saltárselo)
+    const camposRequeridos = ['nombre', 'rut', 'email', 'telefono', 'direccion', 'comuna', 'region'];
+    const faltante = camposRequeridos.find((campo) => !cliente[campo] || String(cliente[campo]).trim() === '');
+    if (faltante) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: `Falta el campo: ${faltante}` }),
+      };
+    }
+
     // Un identificador único para este pedido (Transbank lo exige).
     // Usamos la fecha/hora + un número random para que nunca se repita.
     const buyOrder = 'RIVIX-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
     const sessionId = 'sesion-' + Date.now();
+
+    // Guardamos los datos de despacho y el detalle del pedido "a un lado"
+    // (en Netlify Blobs, un almacén simple de datos), usando el número de
+    // orden como identificador. Como estas funciones no "recuerdan" nada
+    // entre un paso y otro, esta es la forma de que webpay-return.js pueda
+    // recuperar estos datos más tarde, cuando Transbank confirme el pago,
+    // y así incluirlos en el correo de aviso al comercio.
+    const store = getStore('rivix-pedidos');
+    await store.setJSON(buyOrder, {
+      cliente,
+      items,
+      amount,
+      creadoEn: new Date().toISOString(),
+    });
 
     // A esta URL Transbank va a devolver al cliente después de que pague
     // (sea que el pago haya salido bien o mal). "event.headers.origin" toma

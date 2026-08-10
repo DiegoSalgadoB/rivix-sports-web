@@ -64,13 +64,23 @@ exports.handler = async (event) => {
     // entre un paso y otro, esta es la forma de que webpay-return.js pueda
     // recuperar estos datos más tarde, cuando Transbank confirme el pago,
     // y así incluirlos en el correo de aviso al comercio.
-    const store = getStore('rivix-pedidos');
-    await store.setJSON(buyOrder, {
-      cliente,
-      items,
-      amount,
-      creadoEn: new Date().toISOString(),
-    });
+    //
+    // IMPORTANTE: esto va en su propio try/catch, separado del pago. Si por
+    // cualquier motivo falla el guardado (por ejemplo, algún problema de
+    // configuración de Netlify Blobs), NO queremos que eso le impida al
+    // cliente pagar — en el peor de los casos, el correo de aviso llegaría
+    // sin el detalle de despacho, pero la venta se puede seguir haciendo.
+    try {
+      const store = getStore('rivix-pedidos');
+      await store.setJSON(buyOrder, {
+        cliente,
+        items,
+        amount,
+        creadoEn: new Date().toISOString(),
+      });
+    } catch (blobError) {
+      console.error('No se pudo guardar el pedido en Blobs:', blobError);
+    }
 
     // A esta URL Transbank va a devolver al cliente después de que pague
     // (sea que el pago haya salido bien o mal). "event.headers.origin" toma

@@ -14,7 +14,6 @@ const {
   IntegrationCommerceCodes,
   Environment,
 } = require('transbank-sdk');
-const { getStore } = require('@netlify/blobs');
 
 exports.handler = async (event) => {
   const origin = event.headers.origin || `https://${event.headers.host}`;
@@ -27,6 +26,21 @@ exports.handler = async (event) => {
 
   const token = params.get('token_ws');
   const tokenCanceled = params.get('TBK_TOKEN');
+
+  // Los datos de despacho viajaron codificados como parámetro "pedido" en la
+  // misma URL de retorno que le dimos a Transbank — este parámetro va en el
+  // querystring de la URL, así que se lee directo desde ahí, sin importar
+  // si Transbank nos llamó por POST o por GET.
+  let pedido = null;
+  const pedidoCodificado = event.queryStringParameters?.pedido;
+  if (pedidoCodificado) {
+    try {
+      const json = Buffer.from(pedidoCodificado, 'base64url').toString('utf-8');
+      pedido = JSON.parse(json);
+    } catch (decodeError) {
+      console.error('No se pudo decodificar el parámetro "pedido":', decodeError);
+    }
+  }
 
   // Caso: el cliente canceló el pago antes de terminar
   if (tokenCanceled && !token) {
@@ -62,16 +76,6 @@ exports.handler = async (event) => {
     if (aprobado) {
       const buyOrder = encodeURIComponent(result.buy_order);
       const monto = encodeURIComponent(result.amount);
-
-      // Recuperamos los datos de despacho que guardamos en webpay-create.js
-      // (nombre, RUT, dirección, etc.), usando el número de orden.
-      let pedido = null;
-      try {
-        const store = getStore('rivix-pedidos');
-        pedido = await store.get(result.buy_order, { type: 'json' });
-      } catch (blobError) {
-        console.error('No se pudo recuperar el pedido guardado:', blobError);
-      }
 
       // Avisar por correo que llegó una venta nueva. Si el correo falla por
       // cualquier motivo, NO queremos que eso rompa la compra del cliente

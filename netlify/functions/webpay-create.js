@@ -19,7 +19,6 @@ const {
   IntegrationCommerceCodes,
   Environment,
 } = require('transbank-sdk');
-const { getStore } = require('@netlify/blobs');
 
 exports.handler = async (event) => {
   // Solo aceptamos pedidos enviados como POST (no se puede "visitar" esta
@@ -58,29 +57,13 @@ exports.handler = async (event) => {
     const buyOrder = 'RIVIX-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
     const sessionId = 'sesion-' + Date.now();
 
-    // Guardamos los datos de despacho y el detalle del pedido "a un lado"
-    // (en Netlify Blobs, un almacén simple de datos), usando el número de
-    // orden como identificador. Como estas funciones no "recuerdan" nada
-    // entre un paso y otro, esta es la forma de que webpay-return.js pueda
-    // recuperar estos datos más tarde, cuando Transbank confirme el pago,
-    // y así incluirlos en el correo de aviso al comercio.
-    //
-    // IMPORTANTE: esto va en su propio try/catch, separado del pago. Si por
-    // cualquier motivo falla el guardado (por ejemplo, algún problema de
-    // configuración de Netlify Blobs), NO queremos que eso le impida al
-    // cliente pagar — en el peor de los casos, el correo de aviso llegaría
-    // sin el detalle de despacho, pero la venta se puede seguir haciendo.
-    try {
-      const store = getStore('rivix-pedidos');
-      await store.setJSON(buyOrder, {
-        cliente,
-        items,
-        amount,
-        creadoEn: new Date().toISOString(),
-      });
-    } catch (blobError) {
-      console.error('No se pudo guardar el pedido en Blobs:', blobError);
-    }
+    // Los datos de despacho y el detalle del pedido viajan codificados
+    // dentro de la misma URL de retorno (en vez de guardarlos aparte en
+    // algún almacén externo). Cuando Transbank confirme el pago y mande al
+    // cliente de vuelta a "webpay-return", esta información va a venir
+    // incluida ahí mismo, lista para usar en el correo de aviso.
+    const pedido = { cliente, items };
+    const pedidoCodificado = Buffer.from(JSON.stringify(pedido), 'utf-8').toString('base64url');
 
     // A esta URL Transbank va a devolver al cliente después de que pague
     // (sea que el pago haya salido bien o mal). "event.headers.origin" toma
@@ -88,7 +71,7 @@ exports.handler = async (event) => {
     // tanto en la versión de pruebas (*.netlify.app) como en rivix.cl sin
     // tener que cambiar nada a mano.
     const origin = event.headers.origin || `https://${event.headers.host}`;
-    const returnUrl = `${origin}/.netlify/functions/webpay-return`;
+    const returnUrl = `${origin}/.netlify/functions/webpay-return?pedido=${pedidoCodificado}`;
 
     // --- Credenciales de AMBIENTE DE PRUEBA (públicas, provistas por Transbank) ---
     const options = new Options(

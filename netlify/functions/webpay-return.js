@@ -27,21 +27,6 @@ exports.handler = async (event) => {
   const token = params.get('token_ws');
   const tokenCanceled = params.get('TBK_TOKEN');
 
-  // Los datos de despacho viajaron codificados como parámetro "pedido" en la
-  // misma URL de retorno que le dimos a Transbank — este parámetro va en el
-  // querystring de la URL, así que se lee directo desde ahí, sin importar
-  // si Transbank nos llamó por POST o por GET.
-  let pedido = null;
-  const pedidoCodificado = event.queryStringParameters?.pedido;
-  if (pedidoCodificado) {
-    try {
-      const json = Buffer.from(pedidoCodificado, 'base64url').toString('utf-8');
-      pedido = JSON.parse(json);
-    } catch (decodeError) {
-      console.error('No se pudo decodificar el parámetro "pedido":', decodeError);
-    }
-  }
-
   // Caso: el cliente canceló el pago antes de terminar
   if (tokenCanceled && !token) {
     return {
@@ -77,13 +62,15 @@ exports.handler = async (event) => {
       const buyOrder = encodeURIComponent(result.buy_order);
       const monto = encodeURIComponent(result.amount);
 
-      // Avisar por correo que llegó una venta nueva. Si el correo falla por
-      // cualquier motivo, NO queremos que eso rompa la compra del cliente
-      // (por eso va en su propio try/catch, separado del pago).
+      // Avisar por correo (versión corta) que el pago de este pedido se
+      // confirmó. El detalle completo (cliente, dirección, productos) ya se
+      // mandó en un correo aparte cuando se creó el pedido, en
+      // webpay-create.js — este correo solo confirma que sí se pagó, y se
+      // relaciona con el otro por el número de orden.
       try {
-        await enviarAvisoDeVenta(result, pedido);
+        await enviarAvisoDePagoConfirmado(result);
       } catch (mailError) {
-        console.error('No se pudo enviar el correo de aviso:', mailError);
+        console.error('No se pudo enviar el correo de confirmación:', mailError);
       }
 
       return {
@@ -117,17 +104,13 @@ exports.handler = async (event) => {
 // Environment.Production).
 // ---------------------------------------------------------------------------
 
-// Correo al que le llega el aviso de cada venta nueva
+// Correo al que le llega el aviso de cada venta confirmada
 const CORREO_AVISO_VENTAS = 'padelaltamirachile@gmail.com';
 
-// Manda un correo simple avisando que se aprobó un pago, usando el servicio
-// Resend (resend.com). Necesita la variable de entorno RESEND_API_KEY
-// configurada en Netlify (Site settings → Environment variables).
-//
-// "pedido" son los datos que guardamos en webpay-create.js (cliente + items)
-// — puede venir null si por algún motivo no se pudo recuperar, y en ese caso
-// el correo se manda igual, solo que sin esos detalles extra.
-async function enviarAvisoDeVenta(result, pedido) {
+// Manda un correo CORTO confirmando que un pedido ya fue pagado. El detalle
+// completo (cliente, dirección, productos) se mandó antes, al crear el
+// pedido — este correo solo confirma el resultado del pago.
+async function enviarAvisoDePagoConfirmado(result) {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
     console.warn('RESEND_API_KEY no está configurada — no se envía el aviso.');
@@ -139,35 +122,13 @@ async function enviarAvisoDeVenta(result, pedido) {
     currency: 'CLP',
   }).format(result.amount);
 
-  const cliente = pedido?.cliente;
-  const items = pedido?.items || [];
-
-  const filasProductos = items.length
-    ? items.map((it) => `<li>${it.name} — ${new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(it.price)}</li>`).join('')
-    : '<li>(no se pudo recuperar el detalle de productos)</li>';
-
-  const datosDespacho = cliente
-    ? `
-      <h3>Datos de despacho</h3>
-      <p><strong>Nombre:</strong> ${cliente.nombre}</p>
-      <p><strong>RUT:</strong> ${cliente.rut}</p>
-      <p><strong>Email:</strong> ${cliente.email}</p>
-      <p><strong>Teléfono:</strong> ${cliente.telefono}</p>
-      <p><strong>Dirección:</strong> ${cliente.direccion}, ${cliente.comuna}, ${cliente.region}</p>
-    `
-    : '<p><em>No se pudieron recuperar los datos de despacho.</em></p>';
-
   const html = `
-    <h2>¡Nueva venta en RIVIX! 🎉</h2>
-    <p><strong>N° de orden:</strong> ${result.buy_order}</p>
+    <h2>✅ Pago confirmado</h2>
+    <p>El pedido con N° de orden <strong>${result.buy_order}</strong> fue pagado con éxito.</p>
     <p><strong>Monto:</strong> ${monto}</p>
     <p><strong>Tarjeta terminada en:</strong> ${result.card_detail?.card_number || 'N/D'}</p>
     <p><strong>Fecha:</strong> ${result.transaction_date}</p>
-
-    <h3>Productos</h3>
-    <ul>${filasProductos}</ul>
-
-    ${datosDespacho}
+    <p style="color:#666; font-size:0.85em;">El detalle de productos y datos de despacho de este pedido llegó en un correo aparte cuando se generó la orden.</p>
   `;
 
   const res = await fetch('https://api.resend.com/emails', {
@@ -179,7 +140,7 @@ async function enviarAvisoDeVenta(result, pedido) {
     body: JSON.stringify({
       from: 'RIVIX <onboarding@resend.dev>',
       to: [CORREO_AVISO_VENTAS],
-      subject: `Nueva venta: ${monto} — Orden ${result.buy_order}`,
+      subject: `✅ Pago confirmado: ${monto} — Orden ${result.buy_order}`,
       html,
     }),
   });

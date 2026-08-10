@@ -57,21 +57,14 @@ exports.handler = async (event) => {
     const buyOrder = 'RIVIX-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
     const sessionId = 'sesion-' + Date.now();
 
-    // Los datos de despacho y el detalle del pedido viajan codificados
-    // dentro de la misma URL de retorno (en vez de guardarlos aparte en
-    // algún almacén externo). Cuando Transbank confirme el pago y mande al
-    // cliente de vuelta a "webpay-return", esta información va a venir
-    // incluida ahí mismo, lista para usar en el correo de aviso.
-    const pedido = { cliente, items };
-    const pedidoCodificado = Buffer.from(JSON.stringify(pedido), 'utf-8').toString('base64url');
-
     // A esta URL Transbank va a devolver al cliente después de que pague
-    // (sea que el pago haya salido bien o mal). "event.headers.origin" toma
-    // automáticamente la URL del sitio donde se está usando, así funciona
-    // tanto en la versión de pruebas (*.netlify.app) como en rivix.cl sin
-    // tener que cambiar nada a mano.
+    // (sea que el pago haya salido bien o mal). Transbank exige que esta URL
+    // no supere los 255 caracteres, así que va SIN datos adicionales — solo
+    // la dirección base. "event.headers.origin" toma automáticamente la URL
+    // del sitio donde se está usando, así funciona tanto en la versión de
+    // pruebas (*.netlify.app) como en rivix.cl sin tener que cambiar nada a mano.
     const origin = event.headers.origin || `https://${event.headers.host}`;
-    const returnUrl = `${origin}/.netlify/functions/webpay-return?pedido=${pedidoCodificado}`;
+    const returnUrl = `${origin}/.netlify/functions/webpay-return`;
 
     // --- Credenciales de AMBIENTE DE PRUEBA (públicas, provistas por Transbank) ---
     const options = new Options(
@@ -82,6 +75,22 @@ exports.handler = async (event) => {
     const tx = new WebpayPlus.Transaction(options);
 
     const response = await tx.create(buyOrder, sessionId, amount, returnUrl);
+
+    // Mandamos el correo con el detalle completo del pedido AHORA, en este
+    // mismo momento (en vez de esperar a que el pago se confirme). Así no
+    // necesitamos guardar los datos en ningún lado para recuperarlos después
+    // — el correo ya sale con toda la información mientras la tenemos a mano.
+    // Más adelante, cuando Transbank confirme si el pago salió bien o mal
+    // (en webpay-return.js), se manda un segundo correo corto avisando el
+    // resultado, que se relaciona con este por el número de orden.
+    //
+    // Va en su propio try/catch: si el correo falla, NO debe impedir que el
+    // cliente sea llevado a pagar.
+    try {
+      await enviarAvisoDePedidoCreado({ buyOrder, amount, cliente, items });
+    } catch (mailError) {
+      console.error('No se pudo enviar el correo de aviso de pedido:', mailError);
+    }
 
     // Le devolvemos al sitio el link y el "token" que hay que usar para
     // mandar al cliente a pagar
@@ -100,6 +109,67 @@ exports.handler = async (event) => {
     };
   }
 };
+
+// ---------------------------------------------------------------------------
+// Correo al que le llegan los avisos de pedidos y ventas
+const CORREO_AVISO_VENTAS = 'padelaltamirachile@gmail.com';
+
+// Manda un correo avisando que se creó un pedido y quedó esperando el pago,
+// con todo el detalle: cliente, dirección de despacho y productos.
+// Usa el servicio Resend (resend.com) — necesita la variable de entorno
+// RESEND_API_KEY configurada en Netlify (Site settings → Environment variables).
+async function enviarAvisoDePedidoCreado({ buyOrder, amount, cliente, items }) {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    console.warn('RESEND_API_KEY no está configurada — no se envía el aviso.');
+    return;
+  }
+
+  const formatoMonto = (valor) =>
+    new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(valor);
+
+  const filasProductos = items.length
+    ? items.map((it) => `<li>${it.name} — ${formatoMonto(it.price)}</li>`).join('')
+    : '<li>(sin detalle de productos)</li>';
+
+  const html = `
+    <h2>🛒 Nuevo pedido — esperando pago</h2>
+    <p>Este correo se manda apenas el cliente hace clic en "Pagar". Si el pago
+    se confirma, te va a llegar un segundo correo corto avisando que sí se pagó.</p>
+
+    <p><strong>N° de orden:</strong> ${buyOrder}</p>
+    <p><strong>Monto:</strong> ${formatoMonto(amount)}</p>
+
+    <h3>Productos</h3>
+    <ul>${filasProductos}</ul>
+
+    <h3>Datos de despacho</h3>
+    <p><strong>Nombre:</strong> ${cliente.nombre}</p>
+    <p><strong>RUT:</strong> ${cliente.rut}</p>
+    <p><strong>Email:</strong> ${cliente.email}</p>
+    <p><strong>Teléfono:</strong> ${cliente.telefono}</p>
+    <p><strong>Dirección:</strong> ${cliente.direccion}, ${cliente.comuna}, ${cliente.region}</p>
+  `;
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: 'RIVIX <onboarding@resend.dev>',
+      to: [CORREO_AVISO_VENTAS],
+      subject: `Nuevo pedido: ${formatoMonto(amount)} — Orden ${buyOrder}`,
+      html,
+    }),
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Resend respondió con error: ${res.status} ${errorText}`);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // CÓMO PASAR A PRODUCCIÓN (cuando Transbank ya aprobó la afiliación real):

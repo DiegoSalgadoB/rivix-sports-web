@@ -20,6 +20,17 @@ const {
   Environment,
 } = require('transbank-sdk');
 
+// Códigos de descuento válidos. IMPORTANTE: esta es la lista "de verdad" —
+// el monto final que se cobra siempre se calcula acá, nunca confiando en un
+// total que venga ya calculado desde el navegador. Si agregas o quitas un
+// código, actualiza también la misma lista en index.html (busca
+// "CODIGOS_PROMOCIONALES") para que el cliente vea el mismo descuento antes
+// de pagar.
+const CODIGOS_PROMOCIONALES = {
+  BIENVENIDO10: 10, // 10% de descuento
+  LEGIONRIVIX15: 15, // 15% de descuento
+};
+
 exports.handler = async (event) => {
   // Solo aceptamos pedidos enviados como POST (no se puede "visitar" esta
   // URL directamente desde el navegador)
@@ -29,9 +40,25 @@ exports.handler = async (event) => {
 
   try {
     const data = JSON.parse(event.body);
-    const amount = Math.round(Number(data.amount)); // monto total en pesos chilenos, sin decimales
     const cliente = data.cliente || {};
     const items = Array.isArray(data.items) ? data.items : [];
+    const codigoPromo = String(data.codigoPromo || '').trim().toUpperCase();
+
+    if (items.length === 0) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: 'El carrito está vacío' }),
+      };
+    }
+
+    // El monto SIEMPRE se calcula acá, sumando los productos que mandó el
+    // cliente y aplicando el descuento si el código es válido — nunca se
+    // usa un monto que venga ya calculado desde el navegador, para que
+    // nadie pueda manipularlo desde las herramientas de desarrollador.
+    const subtotal = items.reduce((acc, it) => acc + Math.round(Number(it.price) || 0), 0);
+    const porcentajeDescuento = CODIGOS_PROMOCIONALES[codigoPromo] || 0;
+    const descuento = Math.round(subtotal * porcentajeDescuento / 100);
+    const amount = subtotal - descuento;
 
     if (!amount || amount <= 0) {
       return {
@@ -87,7 +114,7 @@ exports.handler = async (event) => {
     // Va en su propio try/catch: si el correo falla, NO debe impedir que el
     // cliente sea llevado a pagar.
     try {
-      await enviarAvisoDePedidoCreado({ buyOrder, amount, cliente, items });
+      await enviarAvisoDePedidoCreado({ buyOrder, amount, subtotal, descuento, codigoPromo, cliente, items });
     } catch (mailError) {
       console.error('No se pudo enviar el correo de aviso de pedido:', mailError);
     }
@@ -118,7 +145,7 @@ const CORREO_AVISO_VENTAS = 'padelaltamirachile@gmail.com';
 // con todo el detalle: cliente, dirección de despacho y productos.
 // Usa el servicio Resend (resend.com) — necesita la variable de entorno
 // RESEND_API_KEY configurada en Netlify (Site settings → Environment variables).
-async function enviarAvisoDePedidoCreado({ buyOrder, amount, cliente, items }) {
+async function enviarAvisoDePedidoCreado({ buyOrder, amount, subtotal, descuento, codigoPromo, cliente, items }) {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
     console.warn('RESEND_API_KEY no está configurada — no se envía el aviso.');
@@ -132,13 +159,21 @@ async function enviarAvisoDePedidoCreado({ buyOrder, amount, cliente, items }) {
     ? items.map((it) => `<li>${it.name} — ${formatoMonto(it.price)}</li>`).join('')
     : '<li>(sin detalle de productos)</li>';
 
+  const filaDescuento = descuento > 0
+    ? `
+      <p><strong>Subtotal:</strong> ${formatoMonto(subtotal)}</p>
+      <p><strong>Código aplicado:</strong> ${codigoPromo} (-${formatoMonto(descuento)})</p>
+    `
+    : '';
+
   const html = `
     <h2>🛒 Nuevo pedido — esperando pago</h2>
     <p>Este correo se manda apenas el cliente hace clic en "Pagar". Si el pago
     se confirma, te va a llegar un segundo correo corto avisando que sí se pagó.</p>
 
     <p><strong>N° de orden:</strong> ${buyOrder}</p>
-    <p><strong>Monto:</strong> ${formatoMonto(amount)}</p>
+    ${filaDescuento}
+    <p><strong>Monto a cobrar:</strong> ${formatoMonto(amount)}</p>
 
     <h3>Productos</h3>
     <ul>${filasProductos}</ul>

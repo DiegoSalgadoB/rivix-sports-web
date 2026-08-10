@@ -310,6 +310,7 @@
   .cart-foot{padding:24px 28px; border-top:1px solid var(--line);}
   .cart-total{display:flex; justify-content:space-between; font-size:1rem; font-weight:700; margin-bottom:18px;}
   .cart-total span:last-child{color:var(--lime); font-family:'Anton'; font-size:1.3rem;}
+  .promo-row{display:flex; gap:8px; margin-bottom:16px;}
   .overlay{position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:150; opacity:0; pointer-events:none; transition:opacity .3s ease;}
 
   /* ---- Formulario de datos de despacho ---- */
@@ -651,6 +652,14 @@
   <div class="cart-head"><h3>Tu carrito</h3><button class="cart-close" id="cartCloseBtn">×</button></div>
   <div class="cart-items" id="cartItems"><div class="cart-empty">Tu carrito está vacío.</div></div>
   <div class="cart-foot">
+    <div class="promo-row">
+      <input type="text" id="promoInput" placeholder="¿Tienes un código de descuento?" style="flex:1; background:transparent; border:1px solid var(--line); color:var(--white); padding:10px 12px; font-family:inherit; font-size:0.82rem; text-transform:uppercase;">
+      <button type="button" id="promoApplyBtn" style="border:1px solid var(--line); padding:10px 16px; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.03em; color:var(--white);">Aplicar</button>
+    </div>
+    <div id="promoMsg" style="font-size:0.78rem; margin-top:8px; display:none;"></div>
+
+    <div class="cart-total" id="cartSubtotalRow" style="display:none; font-size:0.85rem; font-weight:400; color:var(--gray);"><span>Subtotal</span><span id="cartSubtotal">$0</span></div>
+    <div class="cart-total" id="cartDiscountRow" style="display:none; font-size:0.85rem; font-weight:400; color:var(--lime);"><span>Descuento</span><span id="cartDiscount">-$0</span></div>
     <div class="cart-total"><span>Total</span><span id="cartTotal">$0</span></div>
     <button class="btn btn-primary" id="webpayBtn" style="width:100%; justify-content:center;">Pagar con Webpay</button>
     <div id="checkoutMsg" style="color:var(--gray); font-size:0.78rem; margin-top:10px; display:none;"></div>
@@ -823,10 +832,36 @@
   });
 
   // ---- Cart ----
+  // Códigos de descuento disponibles. Esto es solo para mostrarle al cliente
+  // una estimación al instante — el descuento REAL y definitivo siempre lo
+  // calcula el servidor (webpay-create.js) usando esta misma lista, así que
+  // aunque alguien intente "editar" el total desde las herramientas del
+  // navegador, el cobro real no cambia.
+  const CODIGOS_PROMOCIONALES = {
+    'BIENVENIDO10': 10,   // 10% de descuento
+    'LEGIONRIVIX15': 15,  // 15% de descuento
+  };
+
   let cart = [];
+  let promoAplicado = null; // código válido actualmente aplicado, o null
   const cartItemsEl = document.getElementById('cartItems');
   const cartCountEl = document.getElementById('cartCount');
   const cartTotalEl = document.getElementById('cartTotal');
+  const cartSubtotalRow = document.getElementById('cartSubtotalRow');
+  const cartSubtotalEl = document.getElementById('cartSubtotal');
+  const cartDiscountRow = document.getElementById('cartDiscountRow');
+  const cartDiscountEl = document.getElementById('cartDiscount');
+  const promoInput = document.getElementById('promoInput');
+  const promoApplyBtn = document.getElementById('promoApplyBtn');
+  const promoMsg = document.getElementById('promoMsg');
+
+  function calcularTotales(){
+    const subtotal = cart.reduce((a,c)=>a+c.price,0);
+    const porcentaje = promoAplicado ? CODIGOS_PROMOCIONALES[promoAplicado] : 0;
+    const descuento = Math.round(subtotal * porcentaje / 100);
+    const total = subtotal - descuento;
+    return { subtotal, descuento, total };
+  }
 
   function addToCart(name, price){
     cart.push({name, price});
@@ -855,9 +890,37 @@
         el.addEventListener('click', ()=> removeFromCart(parseInt(el.dataset.idx)));
       });
     }
-    const total = cart.reduce((a,c)=>a+c.price,0);
+    const { subtotal, descuento, total } = calcularTotales();
+    if (promoAplicado) {
+      cartSubtotalRow.style.display = 'flex';
+      cartSubtotalEl.textContent = formatCLP(subtotal);
+      cartDiscountRow.style.display = 'flex';
+      cartDiscountEl.textContent = '-' + formatCLP(descuento);
+    } else {
+      cartSubtotalRow.style.display = 'none';
+      cartDiscountRow.style.display = 'none';
+    }
     cartTotalEl.textContent = formatCLP(total);
   }
+
+  promoApplyBtn.addEventListener('click', () => {
+    const codigo = promoInput.value.trim().toUpperCase();
+    promoMsg.style.display = 'block';
+    if (!codigo) {
+      promoAplicado = null;
+      promoMsg.style.color = 'var(--gray)';
+      promoMsg.textContent = 'Ingresa un código para aplicarlo.';
+    } else if (CODIGOS_PROMOCIONALES[codigo] !== undefined) {
+      promoAplicado = codigo;
+      promoMsg.style.color = 'var(--lime)';
+      promoMsg.textContent = `¡Código aplicado! ${CODIGOS_PROMOCIONALES[codigo]}% de descuento.`;
+    } else {
+      promoAplicado = null;
+      promoMsg.style.color = '#ff6b6b';
+      promoMsg.textContent = 'Ese código no es válido.';
+    }
+    renderCart();
+  });
   const cartDrawer = document.getElementById('cartDrawer');
   const overlay = document.getElementById('overlay');
   function openCart(){ cartDrawer.classList.add('open'); overlay.classList.add('show'); }
@@ -1036,8 +1099,6 @@
       localStorage.removeItem(LLAVE_DATOS_GUARDADOS);
     }
 
-    const total = cart.reduce((a, c) => a + c.price, 0);
-
     checkoutSubmitBtn.disabled = true;
     checkoutSubmitBtn.textContent = 'Redirigiendo a Webpay...';
 
@@ -1046,9 +1107,9 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount: total,
           cliente,
           items: cart.map(c => ({ name: c.name, price: c.price })),
+          codigoPromo: promoAplicado || '',
         }),
       });
 

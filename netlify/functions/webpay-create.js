@@ -6,17 +6,13 @@
 // Transbank "quiero cobrar tanto dinero" y Transbank responde con un link
 // al que hay que mandar al cliente para que pague con su tarjeta.
 //
-// HOY este archivo usa las credenciales de PRUEBA de Transbank (son públicas,
-// las mismas para todos los que están probando su integración — no hay que
-// pedirle nada a Transbank todavía para que esto funcione en modo prueba).
-// Cuando Transbank apruebe la afiliación real, se reemplazan por las
-// credenciales de producción (ver instrucciones al final del archivo).
+// Este archivo usa las credenciales REALES de Transbank (dinero real), leídas
+// desde variables de entorno configuradas en Netlify: WEBPAY_COMMERCE_CODE y
+// WEBPAY_API_KEY.
 
 const {
   WebpayPlus,
   Options,
-  IntegrationApiKeys,
-  IntegrationCommerceCodes,
   Environment,
 } = require('transbank-sdk');
 
@@ -93,11 +89,12 @@ exports.handler = async (event) => {
     const origin = event.headers.origin || `https://${event.headers.host}`;
     const returnUrl = `${origin}/.netlify/functions/webpay-return`;
 
-    // --- Credenciales de AMBIENTE DE PRUEBA (públicas, provistas por Transbank) ---
+    // --- Credenciales de PRODUCCIÓN (dinero real), leídas desde variables de
+    // entorno configuradas en Netlify — nunca escritas directo en el código. ---
     const options = new Options(
-      IntegrationCommerceCodes.WEBPAY_PLUS,
-      IntegrationApiKeys.WEBPAY,
-      Environment.Integration
+      process.env.WEBPAY_COMMERCE_CODE,
+      process.env.WEBPAY_API_KEY,
+      Environment.Production
     );
     const tx = new WebpayPlus.Transaction(options);
 
@@ -207,26 +204,13 @@ async function enviarAvisoDePedidoCreado({ buyOrder, amount, subtotal, descuento
 }
 
 // ---------------------------------------------------------------------------
-// CÓMO PASAR A PRODUCCIÓN (cuando Transbank ya aprobó la afiliación real):
+// ESTE ARCHIVO YA ESTÁ CONFIGURADO PARA PRODUCCIÓN (dinero real).
 //
-// 1. Reemplaza este bloque:
-//      const options = new Options(
-//        IntegrationCommerceCodes.WEBPAY_PLUS,
-//        IntegrationApiKeys.WEBPAY,
-//        Environment.Integration
-//      );
+// Las credenciales se leen desde variables de entorno en Netlify:
+//   WEBPAY_COMMERCE_CODE = código de comercio entregado por Transbank
+//   WEBPAY_API_KEY       = Tbk-Api-Key-Secret entregada por Transbank
 //
-//    por:
-//      const options = new Options(
-//        process.env.WEBPAY_COMMERCE_CODE,
-//        process.env.WEBPAY_API_KEY,
-//        Environment.Production
-//      );
-//
-// 2. En Netlify: Site settings → Environment variables, agrega:
-//      WEBPAY_COMMERCE_CODE = (el código que te dio Transbank)
-//      WEBPAY_API_KEY       = (la llave secreta que te dio Transbank)
-//
-//    NUNCA escribas esas dos claves directamente en este archivo ni las subas
-//    a GitHub — por eso van como "variables de entorno" en Netlify.
+// Configúralas en: Netlify → Project configuration → Environment variables
+// (marcadas como "Contains secret values"). NUNCA escribas esas claves
+// directo en este archivo ni las subas a GitHub.
 // ---------------------------------------------------------------------------

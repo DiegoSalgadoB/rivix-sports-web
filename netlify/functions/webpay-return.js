@@ -10,8 +10,6 @@
 const {
   WebpayPlus,
   Options,
-  IntegrationApiKeys,
-  IntegrationCommerceCodes,
   Environment,
 } = require('transbank-sdk');
 
@@ -45,11 +43,11 @@ exports.handler = async (event) => {
   }
 
   try {
-    // --- Credenciales de AMBIENTE DE PRUEBA (mismas que en webpay-create.js) ---
+    // --- Credenciales de PRODUCCIÓN (mismas que en webpay-create.js) ---
     const options = new Options(
-      IntegrationCommerceCodes.WEBPAY_PLUS,
-      IntegrationApiKeys.WEBPAY,
-      Environment.Integration
+      process.env.WEBPAY_COMMERCE_CODE,
+      process.env.WEBPAY_API_KEY,
+      Environment.Production
     );
     const tx = new WebpayPlus.Transaction(options);
 
@@ -98,10 +96,8 @@ exports.handler = async (event) => {
 };
 
 // ---------------------------------------------------------------------------
-// Para pasar a producción, hacer el mismo cambio que en webpay-create.js
-// (reemplazar IntegrationCommerceCodes/IntegrationApiKeys/Environment.Integration
-// por las variables de entorno WEBPAY_COMMERCE_CODE, WEBPAY_API_KEY y
-// Environment.Production).
+// Este archivo ya está configurado para producción (dinero real), leyendo
+// las credenciales desde WEBPAY_COMMERCE_CODE y WEBPAY_API_KEY en Netlify.
 // ---------------------------------------------------------------------------
 
 // Correo al que le llega el aviso de cada venta confirmada
